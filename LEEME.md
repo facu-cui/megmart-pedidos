@@ -2,60 +2,52 @@
 
 Tablero del depósito: se pega el pedido de WhatsApp y cada producto se marca cuando se saca, se limpia (o se le pone el logo) y se embala.
 
-## Qué cambió respecto a la versión anterior
+Funciona solo con **GitHub Pages** (publica la página) y **Supabase** (guarda los datos). No hay servidor propio, ni usuario y contraseña.
 
-- **Base de datos compartida (Supabase).** Antes cada celular guardaba sus propios pedidos y nadie veía lo del otro. Ahora todos ven lo mismo, y lo que marca uno aparece solo en los demás, sin recargar.
+## Qué tiene
+
+- **Base de datos compartida (Supabase).** Todos ven los mismos pedidos, y lo que marca uno aparece solo en los demás, sin recargar.
 - **No se pisan los cambios.** Si dos personas tocan el mismo producto al mismo tiempo, la app trae lo último y suma las dos cosas.
-- **Login.** Hace falta la cuenta del depósito para entrar. Solo las cuentas de la lista de Megmart pueden ver o cambiar pedidos.
-- **Quién hizo qué.** Cada celular pone el nombre de quien lo usa. En cada producto se ve "Último cambio: Juan · hace 5 min", y en cada pedido quién lo cargó.
+- **Sin login.** Se entra directo con el link. La primera vez pregunta el nombre de quien usa el celular.
+- **Quién hizo qué.** En cada producto se ve "Último cambio: Juan · hace 5 min", y en cada pedido quién lo cargó.
 - **El machete aparece solo.** Debajo de cada alfombra, combo o bandeja se ve qué logo lleva, si el modelo está en el machete (ej. "Combo Cronos" → Solo conductor, logo Megmart).
 - **Mandar estado.** Botón en cada pedido que arma un resumen ("3 de 10 listos", qué falta) para mandarlo por WhatsApp.
-- **Buscador de pedidos** en el inicio (por nombre o producto). Los terminados se muestran de a 5.
-- **Pedidos viejos.** Si un celular tenía pedidos guardados de la versión anterior, la app ofrece subirlos a la base (con las etapas como estaban).
+- **Buscador de pedidos** en el inicio. Los terminados se muestran de a 5.
+- **Pedidos viejos.** Si un celular tenía pedidos de la versión anterior, la app ofrece subirlos a la base.
 - **Sin internet.** Avisa arriba, sigue mostrando los últimos datos y, cuando vuelve la conexión, trae todo de nuevo.
 - Se puede instalar en el celular (**⋮ → Agregar a pantalla principal**).
 
-## Puesta en marcha (una sola vez, ~10 minutos)
+> **Importante:** como no hay login, cualquiera que tenga el link puede ver, cambiar o borrar pedidos. No lo compartas afuera del equipo.
 
-Usa el **mismo proyecto de Supabase que McDash**. Las tablas nuevas empiezan con `megmart_` y no tocan nada de McDash.
+## Puesta en marcha (una sola vez)
 
-### 1. Crear la cuenta del depósito
-1. En Supabase: **Authentication → Users → Add user → Create new user**.
-2. Poné un email y una contraseña para el depósito (por ejemplo `deposito.megmart@...`). Marcá **Auto Confirm User**.
+### 1. Supabase
+1. Creá un proyecto en [supabase.com](https://supabase.com) (región South America, São Paulo).
+2. **SQL Editor → New query**: pegá todo `supabase-megmart.sql` y tocá **Run**. Tiene que decir "Success".
+3. **Project Settings → Data API**: copiá la Project URL. **API Keys**: copiá la Publishable key (nunca la Secret).
+4. Pegalas en `config.js`.
 
-### 2. Crear las tablas
-1. Abrí `supabase-megmart.sql` y en la **última línea** cambiá `deposito.megmart@ejemplo.com` por el email del paso 1 (en minúsculas).
-2. En Supabase: **SQL Editor → New query**, pegá todo el archivo y tocá **Run**. Tiene que decir "Success".
-
-Para sumar otra cuenta más adelante (por ejemplo una por encargado), creala igual que en el paso 1 y corré solo esto en el SQL Editor:
-
-```sql
-insert into public.megmart_miembros (email) values ('otro.email@...');
-```
-
-### 3. Probarla en la PC
-Doble clic en `abrir-megmart.bat`. Se abre en <http://localhost:8090>. Dejá abierta la ventana negra mientras la usás (hace falta tener Node instalado).
-
-### 4. Publicarla para los celulares
-La versión actual está en `https://facu-cui.github.io/megmart-pedidos/`. Quien maneja esa cuenta de GitHub tiene que reemplazar el `index.html` viejo por **todos** los archivos de esta carpeta, menos `servidor.js`, `abrir-megmart.bat` y `supabase-megmart.sql`:
+### 2. GitHub Pages
+Subí a un repositorio público estos 8 archivos y activá **Settings → Pages → Deploy from a branch → main / (root)**:
 
 `index.html`, `app.js`, `logica.js`, `config.js`, `styles.css`, `manifest.json`, `sw.js`, `icono.png`
 
-> Si se publica en la **misma dirección**, cada celular va a ofrecer subir los pedidos que tenía guardados. En otra dirección no los ve (el navegador los guarda por dirección).
+La app se prueba con el link de GitHub Pages. Abriendo el `index.html` con doble clic no anda.
+
+> Si se publica en la **misma dirección** que la versión anterior, cada celular va a ofrecer subir los pedidos que tenía guardados.
 
 ## Archivos
 
 | Archivo | Qué es |
 |---|---|
-| `index.html`, `styles.css` | La pantalla (mismo diseño que antes) |
-| `app.js` | Login, guardado en Supabase y actualización en vivo |
+| `index.html`, `styles.css` | La pantalla |
+| `app.js` | Guardado en Supabase y actualización en vivo |
 | `logica.js` | Lectura del mensaje de WhatsApp, etapas y machete |
-| `config.js` | Dirección y clave pública de Supabase (las mismas de McDash) |
-| `supabase-megmart.sql` | Crea las tablas y permisos en Supabase |
+| `config.js` | Dirección y clave pública de Supabase |
+| `supabase-megmart.sql` | Crea las tablas y permisos en Supabase (no se sube a GitHub) |
 | `sw.js`, `manifest.json`, `icono.png` | Para instalarla en el celular |
-| `servidor.js`, `abrir-megmart.bat` | Para usarla en la PC |
 
 ## Límites del plan gratis de Supabase
 
-- Megmart casi no ocupa lugar (no guarda fotos), así que comparte sin problema el espacio con McDash.
-- Si el proyecto no se usa durante 7 días seguidos, Supabase lo pausa (y se pausan las dos apps). Se reactiva desde el panel.
+- Megmart casi no ocupa lugar (no guarda fotos): el plan gratis alcanza de sobra.
+- Si el proyecto no se usa durante 7 días seguidos, Supabase lo pausa. Se reactiva desde el panel con **Restore project**.

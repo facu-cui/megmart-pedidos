@@ -15,7 +15,7 @@ const toastEl = document.getElementById('toast');
 const STAGE_IC = ['i-espera', 'i-sacar', 'i-limpiar', 'i-check'];
 const EJEMPLO = 'CA\n\nX2 Combo Cronos cubre manija Megmart\nX1 Toro doble capa\nX1 Combo Logan\nX1 Taos\n\nBandejas\n\nX1 Taos\nX2 WR-V\n\nProtectores\n\nX1 Citroen';
 const K_NOMBRE = 'megmart-nombre';
-const K_CACHE = 'megmart-cache-v2';
+const K_CACHE = 'megmart-cache-v3';
 const K_VIEJO = 'megmart-pedidos-v1';      // pedidos de la versión anterior (solo en el celular)
 const K_VIEJO_M = 'megmart-machete-v1';
 const K_MIGRADO = 'megmart-migrado';
@@ -29,14 +29,13 @@ const LS = {
 
 /* ---------- estado ---------- */
 const S = {
-  fase: 'cargando',          // cargando | login | sinacceso | nombre | app
+  fase: 'cargando',          // cargando | nombre | app
   pedidos: new Map(),        // id → { id, nombre, creado, por }
   items: new Map(),          // id → producto
   mach: [],
   listo: false,              // ya llegaron los datos (de la base o de la copia del celular)
   online: navigator.onLine,
   yo: LS.get(K_NOMBRE, ''),
-  email: '',
   canal: null,
   idx: null,
   verTerminados: false,
@@ -86,8 +85,7 @@ function toast(msg) {
 function errMsg(e) {
   const m = String((e && (e.message || e.error_description)) || '');
   if (!navigator.onLine || /fetch|network|Load failed/i.test(m)) return 'Sin internet: el cambio no se guardó. Probá de nuevo cuando vuelva la conexión.';
-  if (/row-level security|permission|42501/i.test(m) || (e && e.code === '42501')) return 'Esta cuenta no tiene permiso para cambiar pedidos de Megmart.';
-  if (/JWT|session|expired/i.test(m)) return 'Se cerró la sesión. Volvé a entrar.';
+  if (/row-level security|permission|42501|does not exist|42P01/i.test(m) || (e && (e.code === '42501' || e.code === '42P01'))) return 'La base de datos no deja guardar. Revisá que se haya corrido el archivo SQL en Supabase.';
   return 'No se pudo guardar el cambio. Probá de nuevo.';
 }
 
@@ -132,12 +130,12 @@ let cacheT = null;
 function guardarCache() {
   clearTimeout(cacheT);
   cacheT = setTimeout(() => {
-    LS.set(K_CACHE, { email: S.email, pedidos: [...S.pedidos.values()], items: [...S.items.values()], mach: S.mach });
+    LS.set(K_CACHE, { pedidos: [...S.pedidos.values()], items: [...S.items.values()], mach: S.mach });
   }, 400);
 }
 function leerCache() {
   const c = LS.get(K_CACHE, null);
-  if (!c || c.email !== S.email) return false;
+  if (!c) return false;
   S.pedidos = new Map((c.pedidos || []).map((p) => [p.id, p]));
   S.items = new Map((c.items || []).map((i) => [i.id, i]));
   S.mach = c.mach || [];
@@ -404,21 +402,7 @@ function tagsV(k, c, ag) {
     (ag ? '<span class="kind k-new">Agregado</span>' : '') + '</span>';
 }
 
-/* ----- entrar ----- */
-function loginV() {
-  return header() +
-    '<form class="login" id="flogin" novalidate><h1>Entrar</h1>' +
-    '<p class="note">Usá la cuenta del depósito. Se pide una sola vez en cada celular.</p>' +
-    '<div class="field"><label for="le">Email</label><input id="le" type="email" autocomplete="username" inputmode="email" required></div>' +
-    '<div class="field"><label for="lp">Contraseña</label><input id="lp" type="password" autocomplete="current-password" required></div>' +
-    '<p class="err" id="lerr" hidden></p>' +
-    '<button class="btn btn-primary btn-block" type="submit" id="lok">Entrar</button></form>';
-}
-function sinAccesoV() {
-  return header() + '<section class="empty"><h2>Esta cuenta no tiene acceso</h2>' +
-    '<p>La cuenta ' + esc(S.email) + ' no está habilitada para Megmart Pedidos. Hay que sumarla a la lista de Megmart en Supabase.</p>' +
-    '<button class="btn" data-a="salir">Entrar con otra cuenta</button></section>';
-}
+/* ----- quién usa este celular ----- */
 function nombreV() {
   return header() +
     '<form class="login" id="fnombre"><h1>¿Quién sos?</h1>' +
@@ -481,7 +465,7 @@ function homeV() {
   }
   h += '<div id="hlist">' + listaHomeV(ps) + '</div>';
   h += '<p class="user">Usando como <b>' + esc(S.yo) + '</b>' +
-    '<button class="btn-text" data-a="nombre">Cambiar nombre</button><button class="btn-text" data-a="salir">Salir</button></p>';
+    '<button class="btn-text" data-a="nombre">Cambiar nombre</button></p>';
   return h;
 }
 
@@ -766,8 +750,6 @@ function render() {
   const sl = tabs ? tabs.scrollLeft : 0;
   let h;
   if (S.fase === 'cargando') h = header() + '<p class="note">Cargando…</p>';
-  else if (S.fase === 'login') h = loginV();
-  else if (S.fase === 'sinacceso') h = sinAccesoV();
   else if (S.fase === 'nombre') h = nombreV();
   else {
     h = view.n === 'nuevo' ? nuevoV() : view.n === 'pedido' ? pedidoV() :
@@ -816,20 +798,7 @@ app.addEventListener('input', (ev) => {
 
 app.addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  if (ev.target.id === 'flogin') {
-    const email = document.getElementById('le').value.trim();
-    const password = document.getElementById('lp').value;
-    const err = document.getElementById('lerr'), btn = document.getElementById('lok');
-    if (!email || !password) { err.textContent = 'Completá el email y la contraseña.'; err.hidden = false; return; }
-    btn.disabled = true; btn.textContent = 'Entrando…'; err.hidden = true;
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) {
-      btn.disabled = false; btn.textContent = 'Entrar';
-      err.textContent = /invalid/i.test(error.message) ? 'Email o contraseña incorrectos.' : (navigator.onLine ? 'No se pudo entrar. Probá de nuevo.' : 'Sin internet. Conectate para entrar.');
-      err.hidden = false;
-    }
-    // si salió bien, onAuthStateChange sigue solo
-  } else if (ev.target.id === 'fnombre') {
+  if (ev.target.id === 'fnombre') {
     const v = document.getElementById('yn').value.trim().slice(0, 30);
     if (!v) { toast('Escribí tu nombre.'); return; }
     S.yo = v;
@@ -961,7 +930,6 @@ app.addEventListener('click', (ev) => {
   else if (a === 'migrar') { if (!S.migrando) migrar(); }
   else if (a === 'nomigrar') { LS.set(K_MIGRADO, 'descartado'); render(); }
   else if (a === 'nombre') { S.fase = 'nombre'; render(); }
-  else if (a === 'salir') { salir(); }
 });
 
 async function compartir(txt) {
@@ -976,27 +944,7 @@ async function compartir(txt) {
   }
 }
 
-async function salir() {
-  if (S.canal) { sb.removeChannel(S.canal); S.canal = null; }
-  try { localStorage.removeItem(K_CACHE); } catch { /* nada */ }
-  await sb.auth.signOut();
-}
-
-/* ---------- arranque ---------- */
-async function conSesion(session) {
-  S.email = (session.user.email || '').toLowerCase();
-  // ¿Esta cuenta está habilitada para Megmart?
-  const { data, error } = await sb.rpc('es_megmart');
-  if (error && navigator.onLine) {
-    S.fase = 'app';
-    if (!leerCache()) { toast('No se pudo conectar con la base de datos. Recargá la página.'); }
-    S.listo = true; render();
-    return;
-  }
-  if (!error && data === false) { S.fase = 'sinacceso'; render(); return; }
-  if (!S.yo) { S.fase = 'nombre'; render(); return; }
-  entrarApp();
-}
+/* ---------- arranque (sin usuario ni contraseña) ---------- */
 function entrarApp() {
   const yaEstaba = S.fase === 'app';
   S.fase = 'app';
@@ -1006,24 +954,6 @@ function entrarApp() {
   recargar();
   escuchar();
 }
-
-let sesionId = null;
-sb.auth.onAuthStateChange((evento, session) => {
-  // Al renovarse el token no hay que volver a arrancar.
-  if (evento === 'TOKEN_REFRESHED' || evento === 'USER_UPDATED') return;
-  setTimeout(() => {
-    if (!session) {
-      sesionId = null;
-      S.fase = 'login'; S.listo = false; S.pedidos = new Map(); S.items = new Map(); S.mach = []; S.idx = null;
-      view = { n: 'home' };
-      render();
-      return;
-    }
-    if (sesionId === session.user.id && S.fase !== 'login') return;
-    sesionId = session.user.id;
-    conSesion(session);
-  }, 0);
-});
 
 window.addEventListener('online', () => { S.online = true; render(); recargar(); });
 window.addEventListener('offline', () => { S.online = false; refrescar(); });
@@ -1036,4 +966,6 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => { if (S.fase === 'app' && (view.n === 'pedido')) refrescar(); }, 60000);
 
 if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
-render();
+// La primera vez pide el nombre (para saber quién marcó cada cosa); después entra directo.
+if (S.yo) entrarApp();
+else { S.fase = 'nombre'; render(); }

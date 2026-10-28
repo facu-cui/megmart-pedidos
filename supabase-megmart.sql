@@ -1,24 +1,9 @@
--- Megmart Pedidos · tablas en el mismo proyecto de Supabase que McDash.
--- Antes de correrlo: cambiá el email de la ÚLTIMA línea por el de la cuenta del depósito.
--- Después pegá TODO en Supabase → SQL Editor → New query → Run. Se corre una sola vez.
--- No toca nada de McDash: todas las tablas nuevas empiezan con "megmart_".
-
--- ───────── Quién puede usar Megmart ─────────
--- Solo las cuentas cuyo email esté en esta lista pueden ver o cambiar pedidos de Megmart.
-create table public.megmart_miembros (
-  email text primary key check (email = lower(email))
-);
-alter table public.megmart_miembros enable row level security;
--- (sin permisos: la lista se maneja solo desde el panel de Supabase)
-
-create or replace function public.es_megmart() returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (
-    select 1 from public.megmart_miembros where email = lower(coalesce(auth.jwt() ->> 'email', ''))
-  );
-$$;
-revoke execute on function public.es_megmart() from public, anon;
-grant execute on function public.es_megmart() to authenticated;
+-- Megmart Pedidos · tablas de la base de datos en Supabase.
+-- Pegá TODO este archivo en Supabase → SQL Editor → New query → Run. Se corre una sola vez.
+-- Todas las tablas empiezan con "megmart_", así que se puede usar en un proyecto que ya tenga otras cosas.
+--
+-- La app no pide usuario ni contraseña: cualquiera que tenga el link puede ver y cambiar pedidos.
+-- No compartas el link afuera del equipo.
 
 -- ───────── Pedidos ─────────
 create table public.megmart_pedidos (
@@ -38,7 +23,7 @@ create table public.megmart_items (
   id               uuid primary key default gen_random_uuid(),
   pedido_id        uuid not null references public.megmart_pedidos (id) on delete cascade,
   orden            int  not null default 0,
-  texto            text not null,
+  texto            text not null check (length(texto) <= 300),
   cant             int  not null check (cant between 1 and 999),
   tipo             text not null check (tipo in ('alf', 'combo', 'ban', 'pro')),
   n                int[] not null check (array_length(n, 1) = 4),
@@ -77,17 +62,18 @@ insert into public.megmart_machete (modelo, detalle) values
   ('AMAROK DISEÑO NUEVO', 'Solo conductor, logo Megmart'),
   ('FORD TERRITORY', 'Solo conductor, logo Ford (fijarse en WhatsApp)');
 
--- ───────── Permisos: solo cuentas de la lista de Megmart ─────────
+-- ───────── Permisos: la app entra sin usuario ni contraseña ─────────
+-- Solo se abren estas tres tablas. Si el proyecto tiene otras tablas (por ejemplo de otra app), no se tocan.
 alter table public.megmart_pedidos enable row level security;
 alter table public.megmart_items   enable row level security;
 alter table public.megmart_machete enable row level security;
 
-create policy "megmart usa pedidos" on public.megmart_pedidos
-  for all to authenticated using (public.es_megmart()) with check (public.es_megmart());
-create policy "megmart usa items" on public.megmart_items
-  for all to authenticated using (public.es_megmart()) with check (public.es_megmart());
-create policy "megmart usa machete" on public.megmart_machete
-  for all to authenticated using (public.es_megmart()) with check (public.es_megmart());
+create policy "megmart abierto pedidos" on public.megmart_pedidos
+  for all to anon, authenticated using (true) with check (true);
+create policy "megmart abierto items" on public.megmart_items
+  for all to anon, authenticated using (true) with check (true);
+create policy "megmart abierto machete" on public.megmart_machete
+  for all to anon, authenticated using (true) with check (true);
 
 -- ───────── Crear un pedido con todos sus productos de una vez ─────────
 -- (si algo falla no queda un pedido a medias)
@@ -120,14 +106,8 @@ begin
   return pid;
 end;
 $$;
-revoke execute on function public.megmart_crear_pedido(text, text, jsonb, timestamptz) from public, anon;
-grant execute on function public.megmart_crear_pedido(text, text, jsonb, timestamptz) to authenticated;
+grant execute on function public.megmart_crear_pedido(text, text, jsonb, timestamptz) to anon, authenticated;
 
 -- ───────── Que los celulares se actualicen solos cuando otro marca algo ─────────
 alter table public.megmart_items replica identity full;
 alter publication supabase_realtime add table public.megmart_pedidos, public.megmart_items, public.megmart_machete;
-
--- ───────── Cuenta del depósito ─────────
--- CAMBIÁ este email por el de la cuenta que creaste para Megmart (en minúsculas).
--- Para sumar otra cuenta más adelante, corré solo esta línea con el otro email.
-insert into public.megmart_miembros (email) values ('deposito.megmart@ejemplo.com');
