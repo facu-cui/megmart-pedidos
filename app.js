@@ -8,7 +8,11 @@ import {
   sinAcentos, claveM, macheteInfo, machetePara
 } from './logica.js';
 
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Si config.js todavía tiene los datos de ejemplo, la app avisa en vez de quedarse cargando.
+const URL_OK = /^https:\/\//i.test(String(SUPABASE_URL || '').trim()) && !/TU-PROYECTO/i.test(SUPABASE_URL);
+const KEY_OK = String(SUPABASE_ANON_KEY || '').trim().length > 20 && !/PEGA/i.test(SUPABASE_ANON_KEY);
+let sb = null;
+try { if (URL_OK && KEY_OK) sb = createClient(SUPABASE_URL.trim(), SUPABASE_ANON_KEY.trim()); } catch { sb = null; }
 
 const app = document.getElementById('app');
 const toastEl = document.getElementById('toast');
@@ -41,6 +45,7 @@ const S = {
   verTerminados: false,
   hq: '',
   migrando: false,
+  error: '',                 // por qué no se pudieron traer los pedidos (si pasó)
   oculto: 0
 };
 let view = { n: 'home' };
@@ -159,11 +164,24 @@ async function cargarTodo() {
   S.items = its;
   S.mach = m.data.map((x) => ({ id: x.id, modelo: x.modelo || '', detalle: x.detalle || '' }));
   S.listo = true;
+  S.error = '';
   cambio();
+}
+function errCarga(e) {
+  const m = String((e && (e.message || e.hint)) || '') + ' ' + String((e && e.code) || '');
+  if (!navigator.onLine) return 'No hay internet. Cuando vuelva la conexión, tocá Reintentar.';
+  if (/42P01|PGRST205|does not exist|Could not find the table/i.test(m)) return 'La base de datos todavía no tiene las tablas de Megmart. Hay que correr el archivo supabase-megmart.sql en Supabase (guía de Supabase, paso 3).';
+  if (/Invalid API key|JWS|JWT|401|No API key/i.test(m)) return 'La clave que está en config.js no es válida. Copiá de nuevo la Publishable key de Supabase (guía de Supabase, paso 4).';
+  if (/fetch|network|Load failed/i.test(m)) return 'No se pudo conectar con Supabase. Revisá la dirección (Project URL) en config.js, o si el proyecto está pausado en supabase.com.';
+  return 'No se pudieron traer los pedidos. Probá de nuevo en un rato.';
 }
 function recargar() {
   if (S.fase !== 'app') return;
-  cargarTodo().catch(() => { if (navigator.onLine) toast('No se pudieron traer los pedidos. Recargá la página.'); });
+  cargarTodo().catch((e) => {
+    S.error = errCarga(e);
+    if (S.listo) toast(S.error); // hay datos guardados en el celular: se siguen viendo
+    else render();
+  });
 }
 
 function escuchar() {
@@ -402,6 +420,14 @@ function tagsV(k, c, ag) {
     (ag ? '<span class="kind k-new">Agregado</span>' : '') + '</span>';
 }
 
+/* ----- falta conectar la base ----- */
+function configV() {
+  return header() + '<section class="box"><h2>Falta conectar la base de datos</h2>' +
+    '<p>El archivo <b>config.js</b> todavía tiene los datos de ejemplo, así que la app no sabe dónde guardar los pedidos.</p>' +
+    '<p>Hay que poner la dirección (Project URL) y la clave (Publishable key) del proyecto de Supabase en config.js y volver a subir ese archivo a GitHub. Está explicado en la guía de Supabase, paso 4.</p>' +
+    '<p class="note">Los pedidos que este celular tenía guardados no se perdieron: cuando la base esté conectada, la app ofrece subirlos.</p></section>';
+}
+
 /* ----- quién usa este celular ----- */
 function nombreV() {
   return header() +
@@ -448,6 +474,10 @@ function migrarV() {
 }
 function homeV() {
   let h = header() + bannerV();
+  if (!S.listo && S.error) {
+    return h + '<section class="box"><h2>No se pudieron traer los pedidos</h2><p>' + esc(S.error) + '</p>' +
+      '<button class="btn btn-primary" data-a="reintentar">Reintentar</button></section>';
+  }
   if (!S.listo) return h + '<p class="note">Cargando pedidos…</p>';
   const ps = todos();
   const act = ps.filter((p) => !p.done);
@@ -750,6 +780,7 @@ function render() {
   const sl = tabs ? tabs.scrollLeft : 0;
   let h;
   if (S.fase === 'cargando') h = header() + '<p class="note">Cargando…</p>';
+  else if (S.fase === 'config') h = configV();
   else if (S.fase === 'nombre') h = nombreV();
   else {
     h = view.n === 'nuevo' ? nuevoV() : view.n === 'pedido' ? pedidoV() :
@@ -930,6 +961,7 @@ app.addEventListener('click', (ev) => {
   else if (a === 'migrar') { if (!S.migrando) migrar(); }
   else if (a === 'nomigrar') { LS.set(K_MIGRADO, 'descartado'); render(); }
   else if (a === 'nombre') { S.fase = 'nombre'; render(); }
+  else if (a === 'reintentar') { S.error = ''; render(); recargar(); }
 });
 
 async function compartir(txt) {
@@ -967,5 +999,6 @@ setInterval(() => { if (S.fase === 'app' && (view.n === 'pedido')) refrescar(); 
 
 if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
 // La primera vez pide el nombre (para saber quién marcó cada cosa); después entra directo.
-if (S.yo) entrarApp();
+if (!sb) { S.fase = 'config'; render(); }
+else if (S.yo) entrarApp();
 else { S.fase = 'nombre'; render(); }
