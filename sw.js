@@ -1,8 +1,8 @@
 // Permite instalar Megmart Pedidos en el celular y abrirlo aunque se corte internet.
 // Siempre se intenta primero la red (así nunca queda una versión vieja); si no hay internet, se usa lo guardado.
 // Los pedidos no pasan por acá: vienen de Supabase.
-const CACHE = 'megmart-v2';
-const ARCHIVOS = ['./', 'index.html', 'styles.css', 'app.js', 'logica.js', 'config.js', 'icono.png', 'manifest.json'];
+const CACHE = 'megmart-v4';
+const ARCHIVOS = ['./', 'index.html', 'styles.css', 'app.js?v=4', 'logica.js?v=4', 'config.js?v=4', 'icono.png', 'manifest.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ARCHIVOS)).then(() => self.skipWaiting()));
